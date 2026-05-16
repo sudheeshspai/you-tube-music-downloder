@@ -1,0 +1,4 @@
+[build]
+  publish = "public"
+
+# No build command needed — it's pure static HTML/CSS/JS

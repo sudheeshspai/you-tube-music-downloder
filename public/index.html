@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YTMusic — YouTube Music Downloader</title>
+  <meta name="description" content="Download YouTube videos as high-quality MP3 audio files for free. Fast, easy, and free." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { inter: ['Inter', 'sans-serif'] },
+          colors: {
+            brand: { 50:'#f0fdf4', 100:'#dcfce7', 400:'#4ade80', 500:'#22c55e', 600:'#16a34a', 900:'#14532d' },
+            surface: { 900:'#0a0a0f', 800:'#111118', 700:'#1a1a24', 600:'#22222f', 500:'#2d2d3d' }
+          },
+          animation: {
+            'pulse-slow': 'pulse 3s cubic-bezier(0.4,0,0.6,1) infinite',
+            'spin-slow': 'spin 3s linear infinite',
+            'bounce-in': 'bounceIn 0.5s ease-out',
+            'slide-up': 'slideUp 0.4s ease-out',
+            'glow': 'glow 2s ease-in-out infinite alternate',
+          },
+          keyframes: {
+            bounceIn: { '0%':{ transform:'scale(0.9)', opacity:'0' }, '100%':{ transform:'scale(1)', opacity:'1' } },
+            slideUp: { '0%':{ transform:'translateY(20px)', opacity:'0' }, '100%':{ transform:'translateY(0)', opacity:'1' } },
+            glow: { '0%':{ boxShadow:'0 0 20px rgba(34,197,94,0.2)' }, '100%':{ boxShadow:'0 0 40px rgba(34,197,94,0.5)' } },
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-surface-900 font-inter text-white min-h-screen overflow-x-hidden">
+
+  <!-- Ambient background -->
+  <div class="fixed inset-0 pointer-events-none z-0">
+    <div class="absolute top-[-20%] left-[30%] w-[600px] h-[600px] rounded-full bg-green-500 opacity-5 blur-[120px]"></div>
+    <div class="absolute bottom-[-10%] right-[20%] w-[400px] h-[400px] rounded-full bg-emerald-400 opacity-5 blur-[100px]"></div>
+    <div class="absolute top-[40%] left-[-10%] w-[300px] h-[300px] rounded-full bg-teal-500 opacity-4 blur-[80px]"></div>
+  </div>
+
+  <!-- Noise texture overlay -->
+  <div class="fixed inset-0 pointer-events-none z-0 opacity-[0.03]" style="background-image:url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22300%22 height=%22300%22><filter id=%22noise%22><feTurbulence type=%22fractalNoise%22 baseFrequency=%220.65%22 numOctaves=%223%22 stitchTiles=%22stitch%22/><feColorMatrix type=%22saturate%22 values=%220%22/></filter><rect width=%22300%22 height=%22300%22 filter=%22url(%23noise)%22 opacity=%221%22/></svg>')"></div>
+
+  <div class="relative z-10 min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="border-b border-white/5 backdrop-blur-xl sticky top-0 z-50 bg-surface-900/80">
+      <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center shadow-lg shadow-green-500/30">
+            <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>
+          </div>
+          <div>
+            <h1 class="text-lg font-bold tracking-tight">YTMusic</h1>
+            <p class="text-xs text-white/40 leading-none">YouTube Downloader</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 text-xs text-white/30 bg-white/5 px-3 py-1.5 rounded-full border border-white/10">
+          <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span>
+          <span>yt-dlp powered</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Hero -->
+    <main class="flex-1 max-w-5xl mx-auto w-full px-6 py-16">
+
+      <div class="text-center mb-14 animate-slide-up">
+        <div class="inline-flex items-center gap-2 bg-green-500/10 border border-green-500/20 text-green-400 text-xs font-medium px-4 py-1.5 rounded-full mb-6">
+          <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
+          Free · Fast · High Quality
+        </div>
+        <h2 class="text-5xl md:text-6xl font-black tracking-tight mb-4 leading-[1.1]">
+          Download YouTube<br/>
+          <span class="bg-gradient-to-r from-green-400 via-emerald-400 to-teal-400 bg-clip-text text-transparent">Music Instantly</span>
+        </h2>
+        <p class="text-white/50 text-lg max-w-xl mx-auto">Paste any YouTube link and get your favorite music as a high-quality MP3 — no ads, no limits.</p>
+      </div>
+
+      <!-- Main Card -->
+      <div class="glass-card rounded-3xl p-8 mb-8 animate-slide-up" style="animation-delay:0.1s">
+
+        <!-- URL Input -->
+        <div class="relative mb-6">
+          <label class="block text-sm font-medium text-white/60 mb-2 ml-1">YouTube URL</label>
+          <div class="relative flex items-center">
+            <div class="absolute left-4 text-white/30">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+            </div>
+            <input
+              id="urlInput"
+              type="url"
+              placeholder="https://www.youtube.com/watch?v=..."
+              class="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-32 py-4 text-white placeholder-white/25 focus:outline-none focus:border-green-500/50 focus:bg-white/8 transition-all duration-300 text-sm"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <button
+              id="fetchBtn"
+              onclick="fetchInfo()"
+              class="absolute right-2 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-400 hover:to-emerald-400 text-white font-semibold text-sm px-5 py-2.5 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-green-500/30 active:scale-95"
+            >
+              Fetch Info
+            </button>
+          </div>
+          <p id="urlError" class="hidden mt-2 ml-1 text-red-400 text-xs"></p>
+        </div>
+
+        <!-- Options Row -->
+        <div class="grid grid-cols-2 gap-4 mb-6">
+          <div>
+            <label class="block text-sm font-medium text-white/60 mb-2 ml-1">Format</label>
+            <div class="flex gap-2">
+              <button onclick="setFormat('mp3')" id="fmtMp3" class="fmt-btn active-fmt flex-1 py-2.5 rounded-xl text-sm font-medium transition-all duration-200">MP3</button>
+              <button onclick="setFormat('opus')" id="fmtOpus" class="fmt-btn flex-1 py-2.5 rounded-xl text-sm font-medium transition-all duration-200">OPUS</button>
+              <button onclick="setFormat('m4a')" id="fmtM4a" class="fmt-btn flex-1 py-2.5 rounded-xl text-sm font-medium transition-all duration-200">M4A</button>
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-white/60 mb-2 ml-1">Quality (MP3)</label>
+            <select id="qualitySelect" class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-green-500/50 transition-all">
+              <option value="320">320 kbps — Best</option>
+              <option value="256">256 kbps — High</option>
+              <option value="192">192 kbps — Good</option>
+              <option value="128">128 kbps — Standard</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Paste from clipboard shortcut -->
+        <div class="flex items-center gap-2 mb-6">
+          <button onclick="pasteFromClipboard()" class="text-xs text-white/40 hover:text-green-400 flex items-center gap-1.5 transition-colors duration-200">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+            Paste from clipboard
+          </button>
+          <span class="text-white/10">·</span>
+          <button onclick="clearAll()" class="text-xs text-white/40 hover:text-red-400 flex items-center gap-1.5 transition-colors duration-200">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            Clear
+          </button>
+        </div>
+      </div>
+
+      <!-- Video Info Card -->
+      <div id="infoCard" class="hidden glass-card rounded-3xl p-6 mb-8 animate-bounce-in">
+        <div class="flex gap-5">
+          <div class="relative flex-shrink-0">
+            <img id="thumbnail" src="" alt="Thumbnail" class="w-40 h-24 object-cover rounded-2xl shadow-lg" />
+            <div class="absolute inset-0 rounded-2xl bg-gradient-to-t from-black/40 to-transparent"></div>
+            <div id="duration" class="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded font-mono"></div>
+          </div>
+          <div class="flex-1 min-w-0">
+            <h3 id="videoTitle" class="font-bold text-base leading-snug mb-1 line-clamp-2"></h3>
+            <p id="videoUploader" class="text-white/50 text-sm mb-3 flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+              <span></span>
+            </p>
+            <div class="flex items-center gap-4 text-xs text-white/40">
+              <span id="viewCount" class="flex items-center gap-1">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+              </span>
+              <span id="uploadDate" class="flex items-center gap-1">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Download Button -->
+        <button
+          id="downloadBtn"
+          onclick="startDownload()"
+          class="mt-5 w-full bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-400 hover:to-emerald-400 text-white font-bold py-4 rounded-2xl transition-all duration-200 hover:shadow-xl hover:shadow-green-500/30 active:scale-[0.98] flex items-center justify-center gap-3 text-base"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+          Download Music
+        </button>
+      </div>
+
+      <!-- Progress Card -->
+      <div id="progressCard" class="hidden glass-card rounded-3xl p-6 mb-8 animate-bounce-in">
+        <div class="flex items-center gap-3 mb-5">
+          <div class="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center">
+            <svg id="progressIcon" class="w-5 h-5 text-green-400 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          </div>
+          <div>
+            <p id="progressMessage" class="font-semibold text-sm">Initializing...</p>
+            <p id="progressSub" class="text-white/40 text-xs mt-0.5"></p>
+          </div>
+        </div>
+        <!-- Progress Bar -->
+        <div class="bg-white/10 rounded-full h-2.5 overflow-hidden mb-3">
+          <div id="progressBar" class="h-full bg-gradient-to-r from-green-400 to-emerald-500 rounded-full transition-all duration-500 shadow-sm shadow-green-400/50" style="width:0%"></div>
+        </div>
+        <div class="flex justify-between text-xs text-white/40">
+          <span id="progressPercent">0%</span>
+          <span id="progressEta"></span>
+        </div>
+      </div>
+
+      <!-- Success Card -->
+      <div id="successCard" class="hidden glass-card-green rounded-3xl p-6 mb-8 animate-bounce-in">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-full bg-green-500/20 border border-green-500/30 flex items-center justify-center flex-shrink-0">
+            <svg class="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+          </div>
+          <div>
+            <p class="font-bold text-green-300">Download Complete!</p>
+            <p class="text-white/50 text-sm mt-0.5">Your music has been saved to <code class="text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded text-xs">~/Downloads/YTMusic/</code></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Error Card -->
+      <div id="errorCard" class="hidden glass-card-red rounded-3xl p-6 mb-8 animate-bounce-in">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-full bg-red-500/20 border border-red-500/30 flex items-center justify-center flex-shrink-0">
+            <svg class="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+          </div>
+          <div>
+            <p class="font-bold text-red-300">Something went wrong</p>
+            <p id="errorMessage" class="text-white/50 text-sm mt-0.5"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Features grid -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-12">
+        <div class="feature-card p-5 rounded-2xl">
+          <div class="w-10 h-10 rounded-xl bg-green-500/10 flex items-center justify-center mb-3">
+            <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          </div>
+          <h4 class="font-semibold text-sm mb-1">Lightning Fast</h4>
+          <p class="text-white/40 text-xs leading-relaxed">Powered by yt-dlp, the fastest and most reliable YouTube downloader available.</p>
+        </div>
+        <div class="feature-card p-5 rounded-2xl">
+          <div class="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center mb-3">
+            <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>
+          </div>
+          <h4 class="font-semibold text-sm mb-1">High Quality Audio</h4>
+          <p class="text-white/40 text-xs leading-relaxed">Choose from MP3 up to 320kbps, OPUS, or M4A for the best listening experience.</p>
+        </div>
+        <div class="feature-card p-5 rounded-2xl">
+          <div class="w-10 h-10 rounded-xl bg-teal-500/10 flex items-center justify-center mb-3">
+            <svg class="w-5 h-5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          </div>
+          <h4 class="font-semibold text-sm mb-1">100% Private</h4>
+          <p class="text-white/40 text-xs leading-relaxed">Everything runs locally on your machine. No data is sent to any external server.</p>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-white/5 py-6 text-center text-white/25 text-xs">
+      <p>YTMusic · Built with Node.js &amp; yt-dlp · For personal use only</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
