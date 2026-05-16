@@ -35,6 +35,9 @@ app.get('/api/info', (req, res) => {
     '--dump-json',
     '--no-playlist',
     '--quiet',
+    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    '--add-header', 'Accept-Language:en-US,en;q=0.9',
+    '--extractor-args', 'youtube:player_client=web',
     url
   ];
 
@@ -85,26 +88,26 @@ app.post('/api/download', (req, res) => {
     res.setHeader('Content-Type', format === 'mp3' ? 'audio/mpeg' : 'audio/opus');
     res.setHeader('X-Filename', filename);
 
+    const bypass = [
+      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      '--add-header', 'Accept-Language:en-US,en;q=0.9',
+      '--extractor-args', 'youtube:player_client=web'
+    ];
     let args;
     if (format === 'mp3') {
       args = [
-        '--no-playlist',
-        '-x',
+        '--no-playlist', '-x',
         '--audio-format', 'mp3',
         '--audio-quality', `${quality}K`,
-        '-o', '-',
-        '--no-warnings',
-        url
+        '-o', '-', '--no-warnings',
+        ...bypass, url
       ];
     } else {
-      // opus/ogg
       args = [
-        '--no-playlist',
-        '-x',
+        '--no-playlist', '-x',
         '--audio-format', format,
-        '-o', '-',
-        '--no-warnings',
-        url
+        '-o', '-', '--no-warnings',
+        ...bypass, url
       ];
     }
 
@@ -148,12 +151,13 @@ app.get('/api/progress', (req, res) => {
   send({ status: 'starting', message: 'Initializing download...' });
 
   const args = [
-    '--no-playlist',
-    '-x',
+    '--no-playlist', '-x',
     '--audio-format', format,
     '--audio-quality', format === 'mp3' ? `${quality}K` : '0',
-    '--newline',
-    '--progress',
+    '--newline', '--progress',
+    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    '--add-header', 'Accept-Language:en-US,en;q=0.9',
+    '--extractor-args', 'youtube:player_client=web',
     '-o', path.join(DOWNLOAD_DIR, '%(title)s.%(ext)s'),
     url
   ];
