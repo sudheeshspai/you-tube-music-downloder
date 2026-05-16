@@ -33,6 +33,10 @@ function fetchYtDlpInfo(url) {
       errorOutput += chunk.toString();
     });
 
+    proc.on('error', (err) => {
+      reject(new Error('yt-dlp spawn error: ' + err.message));
+    });
+
     proc.on('close', (code) => {
       if (code === 0) {
         try {
@@ -117,6 +121,10 @@ app.post('/api/download', async (req, res) => {
     const ffmpegArgs = buildFfmpegArgs('pipe:0', format, quality, 'pipe:1');
     const ffmpegProc = spawn('ffmpeg', ffmpegArgs);
 
+    ytProc.on('error', (err) => {
+      console.error('[yt-dlp error]', err);
+    });
+
     ytProc.stdout.pipe(ffmpegProc.stdin);
     ffmpegProc.stdout.pipe(res);
 
@@ -170,6 +178,10 @@ app.get('/api/progress', async (req, res) => {
     const ytProc = spawn('yt-dlp', ['-f', 'bestaudio', '-o', '-', '--no-warnings', url]);
     const ffmpegArgs = buildFfmpegArgs('pipe:0', format, quality, outputFile, true);
     const ffmpegProc = spawn('ffmpeg', ffmpegArgs);
+
+    ytProc.on('error', (err) => {
+      console.error('[yt-dlp error]', err);
+    });
 
     let killed = false;
 
