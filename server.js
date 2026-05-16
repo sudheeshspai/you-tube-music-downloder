@@ -96,8 +96,10 @@ app.get('/api/info', async (req, res) => {
     });
   } catch (e) {
     console.error('[/api/info error]', e.message);
+    // Extract the first meaningful line of the error to show in the UI
+    const firstLine = e.message.split('\n').find(line => line.toLowerCase().includes('error')) || 'Unknown error';
     res.status(500).json({
-      error: 'Could not fetch video info. The video may be unavailable. Try again in a moment.',
+      error: `Could not fetch info. ${firstLine.substring(0, 100)}`,
     });
   }
 });
