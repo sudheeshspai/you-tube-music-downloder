@@ -18,45 +18,36 @@ if (!fs.existsSync(DOWNLOAD_DIR)) {
   fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
 }
 
-// ─── Invidious instance management ────────────────────────────────────────────
-// These are confirmed working instances with api:true from api.invidious.io
-let invidiousInstances = [
-  'https://inv.thepixora.com',        // api:true, cors:true
-  'https://invidious.nerdvpn.de',     // fallback
-  'https://inv.nadeko.net',           // fallback
-  'https://yt.chocolatemoo53.com',    // fallback
-];
+// ─── yt-dlp Helpers ───────────────────────────────────────────────────────────
+function fetchYtDlpInfo(url) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn('yt-dlp', ['--dump-json', '--no-playlist', '--no-warnings', url]);
+    let output = '';
+    let errorOutput = '';
 
-// At startup, refresh instance list from official source
-async function refreshInstances() {
-  try {
-    const res = await fetch('https://api.invidious.io/instances.json', {
-      signal: AbortSignal.timeout(8000),
+    proc.stdout.on('data', (chunk) => {
+      output += chunk.toString();
     });
-    if (!res.ok) return;
-    const list = await res.json();
-    // Filter: must be https, prefer api:true
-    const withApi = list
-      .filter(([, d]) => d.type === 'https' && d.api === true && d.monitor && !d.monitor.down)
-      .map(([, d]) => d.uri);
-    const withoutApi = list
-      .filter(([, d]) => d.type === 'https' && d.api !== false && d.monitor && !d.monitor.down)
-      .map(([, d]) => d.uri);
-    const merged = [...new Set([...withApi, ...withoutApi])];
-    if (merged.length > 0) {
-      invidiousInstances = merged;
-      console.log(`[Invidious] Loaded ${merged.length} instances (${withApi.length} with API)`);
-    }
-  } catch (e) {
-    console.warn('[Invidious] Could not refresh instance list:', e.message);
-  }
+
+    proc.stderr.on('data', (chunk) => {
+      errorOutput += chunk.toString();
+    });
+
+    proc.on('close', (code) => {
+      if (code === 0) {
+        try {
+          const info = JSON.parse(output);
+          resolve(info);
+        } catch (err) {
+          reject(new Error('Failed to parse yt-dlp JSON'));
+        }
+      } else {
+        reject(new Error('yt-dlp error: ' + errorOutput));
+      }
+    });
+  });
 }
 
-// Call once at startup, refresh every 6 hours
-refreshInstances();
-setInterval(refreshInstances, 6 * 60 * 60 * 1000);
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 function extractVideoId(url) {
   const match = url.match(
     /(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([^&\s?#]+)/
@@ -74,50 +65,6 @@ function safeFilename(title) {
   return (title || 'audio').replace(/[^\w\s\-\.]/g, '_').trim().substring(0, 100);
 }
 
-// Fetch video info from Invidious, trying each instance
-async function fetchInvidiousInfo(videoId) {
-  const errors = [];
-  for (const instance of invidiousInstances) {
-    try {
-      const url = `${instance}/api/v1/videos/${videoId}?fields=title,author,lengthSeconds,viewCount,published,videoThumbnails,adaptiveFormats,description`;
-      const res = await fetch(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0' },
-        signal: AbortSignal.timeout(12000),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.title) {
-          console.log(`[Invidious] OK from ${instance}`);
-          return { data, instance };
-        }
-      } else {
-        errors.push(`${instance}: HTTP ${res.status}`);
-      }
-    } catch (e) {
-      errors.push(`${instance}: ${e.message}`);
-      console.warn(`[Invidious] ${instance} failed: ${e.message}`);
-    }
-  }
-  throw new Error(`All instances failed: ${errors.slice(0, 3).join('; ')}`);
-}
-
-// Pick best audio stream from Invidious adaptiveFormats
-function pickBestAudio(formats = []) {
-  const audioOnly = formats.filter(f => f.type && f.type.startsWith('audio/'));
-  // Sort by bitrate descending
-  audioOnly.sort((a, b) => (parseInt(b.bitrate) || 0) - (parseInt(a.bitrate) || 0));
-  return audioOnly[0] || null;
-}
-
-// Best thumbnail from Invidious thumbnails array
-function bestThumbnail(thumbnails = []) {
-  if (!thumbnails.length) return '';
-  // Prefer maxresdefault, then hqdefault
-  const maxres = thumbnails.find(t => t.quality === 'maxresdefault');
-  const hq = thumbnails.find(t => t.quality === 'hqdefault');
-  return (maxres || hq || thumbnails[0]).url || '';
-}
-
 // ─── GET /api/info ─────────────────────────────────────────────────────────────
 app.get('/api/info', async (req, res) => {
   const { url } = req.query;
@@ -126,28 +73,21 @@ app.get('/api/info', async (req, res) => {
   if (!isValidYouTubeUrl(url))
     return res.status(400).json({ error: 'Invalid YouTube URL. Paste a youtube.com or youtu.be link.' });
 
-  const videoId = extractVideoId(url);
-  if (!videoId)
-    return res.status(400).json({ error: 'Could not extract video ID from URL.' });
-
   try {
-    const { data, instance } = await fetchInvidiousInfo(videoId);
-    const bestAudio = pickBestAudio(data.adaptiveFormats || []);
+    const info = await fetchYtDlpInfo(url);
 
     res.json({
-      title: data.title,
-      uploader: data.author,
-      duration: data.lengthSeconds,
-      thumbnail: bestThumbnail(data.videoThumbnails || []),
-      view_count: data.viewCount,
-      upload_date: data.published
-        ? new Date(data.published * 1000).toISOString().slice(0, 10).replace(/-/g, '')
-        : null,
-      description: data.description ? data.description.substring(0, 200) : '',
-      webpage_url: `https://www.youtube.com/watch?v=${videoId}`,
-      videoId,
-      audioUrl: bestAudio ? bestAudio.url : null,
-      _instance: instance,
+      title: info.title,
+      uploader: info.uploader,
+      duration: info.duration,
+      thumbnail: info.thumbnail || (info.thumbnails && info.thumbnails.length ? info.thumbnails[info.thumbnails.length - 1].url : ''),
+      view_count: info.view_count,
+      upload_date: info.upload_date,
+      description: info.description ? info.description.substring(0, 200) : '',
+      webpage_url: info.webpage_url,
+      videoId: info.id,
+      audioUrl: null,
+      _instance: 'yt-dlp',
     });
   } catch (e) {
     console.error('[/api/info error]', e.message);
@@ -165,28 +105,33 @@ app.post('/api/download', async (req, res) => {
   if (!isValidYouTubeUrl(url))
     return res.status(400).json({ error: 'Invalid YouTube URL' });
 
-  const videoId = extractVideoId(url);
-  if (!videoId) return res.status(400).json({ error: 'Could not extract video ID' });
-
   try {
-    const { data } = await fetchInvidiousInfo(videoId);
-    const bestAudio = pickBestAudio(data.adaptiveFormats || []);
-    if (!bestAudio) return res.status(500).json({ error: 'No audio stream found' });
+    const info = await fetchYtDlpInfo(url);
 
-    const filename = `${safeFilename(data.title)}.${format}`;
+    const filename = `${safeFilename(info.title)}.${format}`;
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Type', format === 'mp3' ? 'audio/mpeg' : 'audio/ogg');
     res.setHeader('X-Filename', filename);
 
-    const ffmpegArgs = buildFfmpegArgs(bestAudio.url, format, quality, 'pipe:1');
-    const proc = spawn('ffmpeg', ffmpegArgs);
-    proc.stdout.pipe(res);
-    proc.stderr.on('data', () => {});
-    proc.on('error', (err) => {
+    const ytProc = spawn('yt-dlp', ['-f', 'bestaudio', '-o', '-', '--no-warnings', url]);
+    const ffmpegArgs = buildFfmpegArgs('pipe:0', format, quality, 'pipe:1');
+    const ffmpegProc = spawn('ffmpeg', ffmpegArgs);
+
+    ytProc.stdout.pipe(ffmpegProc.stdin);
+    ffmpegProc.stdout.pipe(res);
+
+    ytProc.stderr.on('data', () => {});
+    ffmpegProc.stderr.on('data', () => {});
+
+    ffmpegProc.on('error', (err) => {
       console.error('[ffmpeg error]', err);
       if (!res.headersSent) res.status(500).json({ error: 'Conversion failed' });
     });
-    req.on('close', () => proc.kill());
+
+    req.on('close', () => {
+      ytProc.kill();
+      ffmpegProc.kill();
+    });
   } catch (e) {
     console.error('[/api/download error]', e.message);
     if (!res.headersSent) res.status(500).json({ error: 'Download failed. Try again.' });
@@ -206,8 +151,7 @@ app.get('/api/progress', async (req, res) => {
 
   const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
 
-  const videoId = extractVideoId(url);
-  if (!videoId) {
+  if (!isValidYouTubeUrl(url)) {
     send({ status: 'error', message: 'Invalid YouTube URL' });
     return res.end();
   }
@@ -215,26 +159,23 @@ app.get('/api/progress', async (req, res) => {
   try {
     send({ status: 'starting', percent: 5, message: 'Fetching video info...' });
 
-    const { data } = await fetchInvidiousInfo(videoId);
-    const bestAudio = pickBestAudio(data.adaptiveFormats || []);
-
-    if (!bestAudio) {
-      send({ status: 'error', message: 'No audio stream available for this video.' });
-      return res.end();
-    }
+    const info = await fetchYtDlpInfo(url);
 
     send({ status: 'starting', percent: 20, message: 'Starting download...' });
 
-    const safeTitle = safeFilename(data.title);
+    const safeTitle = safeFilename(info.title);
     const outputFile = path.join(DOWNLOAD_DIR, `${safeTitle}.${format}`);
-    const duration = data.lengthSeconds || 0;
+    const duration = info.duration || 0;
 
-    // ffmpeg reads audio URL, converts, reports progress via stderr
-    const ffmpegArgs = buildFfmpegArgs(bestAudio.url, format, quality, outputFile, true);
-    const proc = spawn('ffmpeg', ffmpegArgs);
+    const ytProc = spawn('yt-dlp', ['-f', 'bestaudio', '-o', '-', '--no-warnings', url]);
+    const ffmpegArgs = buildFfmpegArgs('pipe:0', format, quality, outputFile, true);
+    const ffmpegProc = spawn('ffmpeg', ffmpegArgs);
+
     let killed = false;
 
-    proc.stderr.on('data', (chunk) => {
+    ytProc.stdout.pipe(ffmpegProc.stdin);
+
+    ffmpegProc.stderr.on('data', (chunk) => {
       const text = chunk.toString();
       const timeMatch = text.match(/out_time_ms=(\d+)/);
       if (timeMatch && duration > 0) {
@@ -248,9 +189,7 @@ app.get('/api/progress', async (req, res) => {
       }
     });
 
-    proc.stdout.on('data', () => {});
-
-    proc.on('close', (code) => {
+    ffmpegProc.on('close', (code) => {
       if (killed) return;
       if (code === 0) {
         send({ status: 'done', percent: 100, message: 'Download complete! Check your YTMusic folder.' });
@@ -262,7 +201,8 @@ app.get('/api/progress', async (req, res) => {
 
     req.on('close', () => {
       killed = true;
-      proc.kill();
+      ytProc.kill();
+      ffmpegProc.kill();
     });
   } catch (e) {
     console.error('[/api/progress error]', e.message);
