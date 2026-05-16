@@ -4,6 +4,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,8 +13,8 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Downloads folder
-const DOWNLOAD_DIR = process.env.DOWNLOAD_DIR || path.join(os.homedir(), 'Downloads', 'YTMusic');
+// Temporary downloads folder for server-side processing
+const DOWNLOAD_DIR = path.join(os.tmpdir(), 'ytmusic_downloads');
 if (!fs.existsSync(DOWNLOAD_DIR)) {
   fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
 }
@@ -172,7 +173,9 @@ app.get('/api/progress', async (req, res) => {
     send({ status: 'starting', percent: 20, message: 'Starting download...' });
 
     const safeTitle = safeFilename(info.title);
-    const outputFile = path.join(DOWNLOAD_DIR, `${safeTitle}.${format}`);
+    const fileId = crypto.randomBytes(8).toString('hex');
+    const filename = `${safeTitle}_${fileId}.${format}`;
+    const outputFile = path.join(DOWNLOAD_DIR, filename);
     const duration = info.duration || 0;
 
     const ytProc = spawn('yt-dlp', ['-f', 'bestaudio', '-o', '-', '--no-warnings', url]);
@@ -204,7 +207,12 @@ app.get('/api/progress', async (req, res) => {
     ffmpegProc.on('close', (code) => {
       if (killed) return;
       if (code === 0) {
-        send({ status: 'done', percent: 100, message: 'Download complete! Check your YTMusic folder.' });
+        send({ 
+          status: 'done', 
+          percent: 100, 
+          message: 'Conversion complete! Starting download...',
+          downloadUrl: `/api/serve-file?filename=${encodeURIComponent(filename)}&originalName=${encodeURIComponent(safeTitle + '.' + format)}`
+        });
       } else {
         send({ status: 'error', message: 'Conversion failed. Please try again.' });
       }
@@ -238,6 +246,27 @@ function buildFfmpegArgs(inputUrl, format, quality, output, withProgress = false
   args.push(output);
   return args;
 }
+
+// ─── GET /api/serve-file ──────────────────────────────────────────────────────
+app.get('/api/serve-file', (req, res) => {
+  const { filename, originalName } = req.query;
+  if (!filename) return res.status(400).send('Filename missing');
+  
+  const filePath = path.join(DOWNLOAD_DIR, filename);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).send('File not found or expired.');
+  }
+
+  res.download(filePath, originalName || filename, (err) => {
+    if (err) {
+      console.error('File download error:', err);
+    }
+    // Clean up the temporary file after it is sent to the client
+    fs.unlink(filePath, (unlinkErr) => {
+      if (unlinkErr) console.error('Cleanup error:', unlinkErr);
+    });
+  });
+});
 
 app.listen(PORT, () => {
   console.log(`\n🎵 YTMusic Downloader running at http://localhost:${PORT}\n`);

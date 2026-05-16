@@ -146,6 +146,16 @@ function startDownload() {
 
     if (data.status === 'done') {
       progressEventSource.close();
+      if (data.downloadUrl) {
+        const a = document.createElement('a');
+        a.href = `${API_BASE}${data.downloadUrl}`;
+        // Add the download attribute to give the browser a strong hint to download the file instead of playing it
+        a.download = '';
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
       setTimeout(() => showCard('successCard'), 800);
     } else if (data.status === 'error') {
       progressEventSource.close();
