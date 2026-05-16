@@ -9,6 +9,18 @@ const crypto = require('crypto');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Base yt-dlp arguments to bypass bot detection on datacenter IPs (like Railway)
+const baseYtArgs = [
+  '--no-warnings',
+  '--extractor-args', 'youtube:player_client=android,web'
+];
+
+// If the user places a cookies.txt file in the project folder, use it automatically!
+const cookiesPath = path.join(__dirname, 'cookies.txt');
+if (fs.existsSync(cookiesPath)) {
+  baseYtArgs.push('--cookies', cookiesPath);
+}
+
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -22,7 +34,7 @@ if (!fs.existsSync(DOWNLOAD_DIR)) {
 // ─── yt-dlp Helpers ───────────────────────────────────────────────────────────
 function fetchYtDlpInfo(url) {
   return new Promise((resolve, reject) => {
-    const proc = spawn('yt-dlp', ['--dump-json', '--no-playlist', '--no-warnings', url]);
+    const proc = spawn('yt-dlp', ['--dump-json', '--no-playlist', ...baseYtArgs, url]);
     let output = '';
     let errorOutput = '';
 
@@ -120,7 +132,7 @@ app.post('/api/download', async (req, res) => {
     res.setHeader('Content-Type', format === 'mp3' ? 'audio/mpeg' : 'audio/ogg');
     res.setHeader('X-Filename', filename);
 
-    const ytProc = spawn('yt-dlp', ['-f', 'bestaudio', '-o', '-', '--no-warnings', url]);
+    const ytProc = spawn('yt-dlp', ['-f', 'bestaudio', '-o', '-', ...baseYtArgs, url]);
     const ffmpegArgs = buildFfmpegArgs('pipe:0', format, quality, 'pipe:1');
     const ffmpegProc = spawn('ffmpeg', ffmpegArgs);
 
@@ -180,7 +192,7 @@ app.get('/api/progress', async (req, res) => {
     const outputFile = path.join(DOWNLOAD_DIR, filename);
     const duration = info.duration || 0;
 
-    const ytProc = spawn('yt-dlp', ['-f', 'bestaudio', '-o', '-', '--no-warnings', url]);
+    const ytProc = spawn('yt-dlp', ['-f', 'bestaudio', '-o', '-', ...baseYtArgs, url]);
     const ffmpegArgs = buildFfmpegArgs('pipe:0', format, quality, outputFile, true);
     const ffmpegProc = spawn('ffmpeg', ffmpegArgs);
 
