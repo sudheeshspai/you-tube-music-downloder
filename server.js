@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const { spawn, exec } = require('child_process');
+const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -12,138 +12,152 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Downloads folder - use /app/downloads in Docker, otherwise ~/Downloads/YTMusic
+// Downloads folder
 const DOWNLOAD_DIR = process.env.DOWNLOAD_DIR || path.join(os.homedir(), 'Downloads', 'YTMusic');
 if (!fs.existsSync(DOWNLOAD_DIR)) {
   fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
 }
 
-// Helper: validate YouTube URL (accepts all sharing formats including ?si= params)
+// ─── Piped API instances (fallback list) ──────────────────────────────────────
+// Piped is an open-source YouTube proxy — it fetches from YouTube on its own
+// unblocked servers so Railway's IP block doesn't matter.
+const PIPED_INSTANCES = [
+  'https://pipedapi.kavin.rocks',
+  'https://pipedapi.adminforge.de',
+  'https://piped-api.garudalinux.org',
+  'https://api.piped.privacydev.net',
+  'https://pipedapi.tokhmi.xyz',
+];
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function extractVideoId(url) {
+  const match = url.match(
+    /(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)([^&\s?#]+)/
+  );
+  return match ? match[1] : null;
+}
+
 function isValidYouTubeUrl(url) {
-  const pattern = /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=[\w\-]+|shorts\/[\w\-]+|playlist\?list=[\w\-]+)|youtu\.be\/[\w\-]+)(\?[^\s]*)?$/i;
+  const pattern =
+    /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=[\w\-]+|shorts\/[\w\-]+|playlist\?list=[\w\-]+)|youtu\.be\/[\w\-]+)(\?[^\s]*)?$/i;
   return pattern.test(url);
 }
 
-// GET /api/info - Fetch video metadata
-app.get('/api/info', (req, res) => {
+function safeFilename(title) {
+  return (title || 'audio').replace(/[^\w\s\-\.]/g, '_').trim();
+}
+
+// Fetch from Piped, trying each instance until one succeeds
+async function fetchPipedInfo(videoId) {
+  for (const instance of PIPED_INSTANCES) {
+    try {
+      const res = await fetch(`${instance}/streams/${videoId}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.title) {
+          console.log(`[Piped] Fetched from ${instance}`);
+          return data;
+        }
+      }
+    } catch (e) {
+      console.warn(`[Piped] ${instance} failed: ${e.message}`);
+    }
+  }
+  throw new Error('All Piped instances failed');
+}
+
+// Pick best audio stream from Piped response
+function pickBestAudio(audioStreams = []) {
+  // Prefer opus/webm at highest bitrate, fallback to any
+  const sorted = [...audioStreams].sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+  return sorted[0] || null;
+}
+
+// ─── GET /api/info ─────────────────────────────────────────────────────────────
+app.get('/api/info', async (req, res) => {
   const { url } = req.query;
 
   if (!url) return res.status(400).json({ error: 'URL is required' });
-  if (!isValidYouTubeUrl(url)) return res.status(400).json({ error: 'Invalid YouTube URL' });
+  if (!isValidYouTubeUrl(url))
+    return res.status(400).json({ error: 'Invalid YouTube URL. Paste a youtube.com or youtu.be link.' });
 
-  const args = [
-    '--dump-json',
-    '--no-playlist',
-    '--no-check-certificates',
-    '--user-agent', 'com.google.android.youtube/19.29.37 (Linux; U; Android 11) gzip',
-    '--add-header', 'Accept-Language:en-US,en;q=0.9',
-    '--extractor-args', 'youtube:player_client=android_music,ios',
-    '--socket-timeout', '30',
-    url
-  ];
+  const videoId = extractVideoId(url);
+  if (!videoId)
+    return res.status(400).json({ error: 'Could not extract video ID from URL.' });
 
-  const proc = spawn('yt-dlp', args);
-  let output = '';
-  let errOutput = '';
+  try {
+    const data = await fetchPipedInfo(videoId);
 
-  proc.stdout.on('data', (data) => { output += data.toString(); });
-  proc.stderr.on('data', (data) => { errOutput += data.toString(); });
+    const bestAudio = pickBestAudio(data.audioStreams);
 
-  proc.on('close', (code) => {
-    if (code !== 0) {
-      console.error('[yt-dlp /api/info error]', errOutput);
-      // Try to give a more helpful error
-      const msg = errOutput.includes('Sign in') || errOutput.includes('bot')
-        ? 'YouTube is blocking this server. Try again in a moment.'
-        : 'Could not fetch video info. Check the URL and try again.';
-      return res.status(500).json({ error: msg });
-    }
-    try {
-      const info = JSON.parse(output);
-      res.json({
-        title: info.title,
-        uploader: info.uploader || info.channel,
-        duration: info.duration,
-        thumbnail: info.thumbnail,
-        view_count: info.view_count,
-        like_count: info.like_count,
-        upload_date: info.upload_date,
-        description: info.description ? info.description.substring(0, 200) : '',
-        webpage_url: info.webpage_url
-      });
-    } catch (e) {
-      res.status(500).json({ error: 'Failed to parse video info' });
-    }
-  });
+    res.json({
+      title: data.title,
+      uploader: data.uploader,
+      duration: data.duration,
+      thumbnail: data.thumbnailUrl,
+      view_count: data.views,
+      upload_date: null, // Piped doesn't always return this
+      description: data.description ? data.description.substring(0, 200) : '',
+      webpage_url: `https://www.youtube.com/watch?v=${videoId}`,
+      videoId,
+      audioUrl: bestAudio ? bestAudio.url : null,
+    });
+  } catch (e) {
+    console.error('[/api/info]', e.message);
+    res.status(500).json({
+      error: 'Could not fetch video info. The video may be private, age-restricted, or unavailable.',
+    });
+  }
 });
 
-// POST /api/download - Stream audio download to client
-app.post('/api/download', (req, res) => {
+// ─── POST /api/download ────────────────────────────────────────────────────────
+app.post('/api/download', async (req, res) => {
   const { url, format = 'mp3', quality = '320' } = req.body;
 
   if (!url) return res.status(400).json({ error: 'URL is required' });
-  if (!isValidYouTubeUrl(url)) return res.status(400).json({ error: 'Invalid YouTube URL' });
+  if (!isValidYouTubeUrl(url))
+    return res.status(400).json({ error: 'Invalid YouTube URL' });
 
-  // First get title for filename
-  exec(`yt-dlp --print title --no-playlist "${url}"`, (err, stdout) => {
-    const title = stdout ? stdout.trim().replace(/[^a-zA-Z0-9 \-_.]/g, '_') : 'audio';
-    const filename = `${title}.${format}`;
+  const videoId = extractVideoId(url);
+  if (!videoId) return res.status(400).json({ error: 'Could not extract video ID' });
 
+  try {
+    const data = await fetchPipedInfo(videoId);
+    const bestAudio = pickBestAudio(data.audioStreams);
+    if (!bestAudio) return res.status(500).json({ error: 'No audio stream found' });
+
+    const filename = `${safeFilename(data.title)}.${format}`;
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Type', format === 'mp3' ? 'audio/mpeg' : 'audio/opus');
     res.setHeader('X-Filename', filename);
 
-    const bypass = [
-      '--no-check-certificates',
-      '--user-agent', 'com.google.android.youtube/19.29.37 (Linux; U; Android 11) gzip',
-      '--add-header', 'Accept-Language:en-US,en;q=0.9',
-      '--extractor-args', 'youtube:player_client=android_music,ios',
-      '--socket-timeout', '30'
+    const ffmpegArgs = [
+      '-y', '-i', bestAudio.url,
+      ...(format === 'mp3'
+        ? ['-vn', '-ar', '44100', '-ac', '2', '-ab', `${quality}k`, '-f', 'mp3']
+        : ['-vn', '-f', format]),
+      'pipe:1',
     ];
-    let args;
-    if (format === 'mp3') {
-      args = [
-        '--no-playlist', '-x',
-        '--audio-format', 'mp3',
-        '--audio-quality', `${quality}K`,
-        '-o', '-', '--no-warnings',
-        ...bypass, url
-      ];
-    } else {
-      args = [
-        '--no-playlist', '-x',
-        '--audio-format', format,
-        '-o', '-', '--no-warnings',
-        ...bypass, url
-      ];
-    }
 
-    const proc = spawn('yt-dlp', args);
-
+    const proc = spawn('ffmpeg', ffmpegArgs);
     proc.stdout.pipe(res);
-
-    let errLog = '';
-    proc.stderr.on('data', (d) => { errLog += d.toString(); });
-
+    proc.stderr.on('data', () => {}); // suppress ffmpeg logs
     proc.on('error', (err) => {
-      console.error('Process error:', err);
-      if (!res.headersSent) res.status(500).json({ error: 'Download failed' });
+      console.error('[ffmpeg error]', err);
+      if (!res.headersSent) res.status(500).json({ error: 'Conversion failed' });
     });
-
-    proc.on('close', (code) => {
-      if (code !== 0) {
-        console.error('Download failed:', errLog);
-      }
-    });
-
-    req.on('close', () => {
-      proc.kill();
-    });
-  });
+    req.on('close', () => proc.kill());
+  } catch (e) {
+    console.error('[/api/download]', e.message);
+    res.status(500).json({ error: 'Download failed. Try again.' });
+  }
 });
 
-// SSE progress endpoint
-app.get('/api/progress', (req, res) => {
+// ─── GET /api/progress (SSE) ──────────────────────────────────────────────────
+app.get('/api/progress', async (req, res) => {
   const { url, format = 'mp3', quality = '320' } = req.query;
 
   if (!url) return res.status(400).json({ error: 'URL is required' });
@@ -155,73 +169,82 @@ app.get('/api/progress', (req, res) => {
 
   const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
 
-  send({ status: 'starting', message: 'Initializing download...' });
+  const videoId = extractVideoId(url);
+  if (!videoId) {
+    send({ status: 'error', message: 'Invalid YouTube URL' });
+    return res.end();
+  }
 
-  const args = [
-    '--no-playlist', '-x',
-    '--audio-format', format,
-    '--audio-quality', format === 'mp3' ? `${quality}K` : '0',
-    '--no-check-certificates',
-    '--user-agent', 'com.google.android.youtube/19.29.37 (Linux; U; Android 11) gzip',
-    '--add-header', 'Accept-Language:en-US,en;q=0.9',
-    '--extractor-args', 'youtube:player_client=android_music,ios',
-    '--socket-timeout', '30',
-    '--newline', '--progress',
-    '-o', path.join(DOWNLOAD_DIR, '%(title)s.%(ext)s'),
-    url
-  ];
+  try {
+    send({ status: 'starting', percent: 5, message: 'Fetching video info...' });
 
-  const proc = spawn('yt-dlp', args);
+    const data = await fetchPipedInfo(videoId);
+    const bestAudio = pickBestAudio(data.audioStreams);
 
-  proc.stdout.on('data', (data) => {
-    const lines = data.toString().split('\n');
-    lines.forEach(line => {
-      if (!line.trim()) return;
-      // Parse progress line
-      const dlMatch = line.match(/\[download\]\s+([\d.]+)%/);
-      if (dlMatch) {
-        const percent = parseFloat(dlMatch[1]);
-        const etaMatch = line.match(/ETA\s+([\d:]+)/);
-        const speedMatch = line.match(/([\d.]+\w+\/s)/);
+    if (!bestAudio) {
+      send({ status: 'error', message: 'No audio stream available for this video.' });
+      return res.end();
+    }
+
+    send({ status: 'starting', percent: 15, message: 'Starting download...' });
+
+    const safeTitle = safeFilename(data.title);
+    const outputFile = path.join(DOWNLOAD_DIR, `${safeTitle}.${format}`);
+    const duration = data.duration || 0;
+
+    // ffmpeg: read from piped stream URL, write to file, report progress
+    const ffmpegArgs = [
+      '-y',
+      '-i', bestAudio.url,
+      ...(format === 'mp3'
+        ? ['-vn', '-ar', '44100', '-ac', '2', '-ab', `${quality}k`, '-f', 'mp3']
+        : ['-vn', '-f', format]),
+      '-progress', 'pipe:2',
+      outputFile,
+    ];
+
+    const proc = spawn('ffmpeg', ffmpegArgs);
+    let killed = false;
+
+    // ffmpeg sends -progress output to stderr (pipe:2)
+    proc.stderr.on('data', (chunk) => {
+      const text = chunk.toString();
+      // parse out_time_ms for progress
+      const timeMatch = text.match(/out_time_ms=(\d+)/);
+      if (timeMatch && duration > 0) {
+        const elapsed = parseInt(timeMatch[1]) / 1000000;
+        const pct = Math.min(95, 15 + (elapsed / duration) * 80);
         send({
           status: 'downloading',
-          percent,
-          eta: etaMatch ? etaMatch[1] : null,
-          speed: speedMatch ? speedMatch[1] : null,
-          message: `Downloading... ${percent.toFixed(1)}%`
+          percent: Math.round(pct),
+          message: `Processing... ${Math.round(pct)}%`,
         });
-      } else if (line.includes('[ExtractAudio]')) {
-        send({ status: 'converting', percent: 95, message: 'Converting to MP3...' });
-      } else if (line.includes('[download] Destination')) {
-        const fileMatch = line.match(/Destination: (.+)$/);
-        if (fileMatch) {
-          send({ status: 'saving', percent: 85, message: 'Saving file...' });
-        }
       }
     });
-  });
 
-  proc.stderr.on('data', (data) => {
-    const msg = data.toString();
-    if (!msg.includes('WARNING')) {
-      send({ status: 'info', message: msg.trim() });
-    }
-  });
+    proc.stdout.on('data', () => {}); // suppress
 
-  proc.on('close', (code) => {
-    if (code === 0) {
-      send({ status: 'done', percent: 100, message: 'Download complete! Check your YTMusic folder.' });
-    } else {
-      send({ status: 'error', message: 'Download failed. Please try again.' });
-    }
+    proc.on('close', (code) => {
+      if (killed) return;
+      if (code === 0) {
+        send({ status: 'done', percent: 100, message: 'Download complete! Check your YTMusic folder.' });
+      } else {
+        send({ status: 'error', message: 'Conversion failed. Please try again.' });
+      }
+      res.end();
+    });
+
+    req.on('close', () => {
+      killed = true;
+      proc.kill();
+    });
+  } catch (e) {
+    console.error('[/api/progress]', e.message);
+    send({ status: 'error', message: 'Could not reach video source. Try again.' });
     res.end();
-  });
-
-  req.on('close', () => {
-    proc.kill();
-  });
+  }
 });
 
 app.listen(PORT, () => {
-  console.log(`\n🎵 YouTube Music Downloader running at http://localhost:${PORT}\n`);
+  console.log(`\n🎵 YTMusic Downloader running at http://localhost:${PORT}\n`);
 });
