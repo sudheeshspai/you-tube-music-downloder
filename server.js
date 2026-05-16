@@ -9,14 +9,21 @@ const crypto = require('crypto');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Base yt-dlp arguments to bypass bot detection on datacenter IPs (like Railway)
+// Base yt-dlp arguments to aggressively bypass bot detection without cookies
 const baseYtArgs = [
   '--no-warnings',
-  '--extractor-args', 'youtube:player_client=android,web'
+  '--extractor-args', 'youtube:player_client=ios,android_creator;youtube:player_skip=webpage,configs,js'
 ];
 
 // If the user places a cookies.txt file in the project folder, use it automatically!
 const cookiesPath = path.join(__dirname, 'cookies.txt');
+
+// Support loading cookies from a Railway Environment Variable securely
+if (process.env.YOUTUBE_COOKIES) {
+  // Write the environment variable to the cookies.txt file
+  fs.writeFileSync(cookiesPath, process.env.YOUTUBE_COOKIES);
+}
+
 if (fs.existsSync(cookiesPath)) {
   baseYtArgs.push('--cookies', cookiesPath);
 }
