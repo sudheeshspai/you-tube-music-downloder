@@ -34,10 +34,11 @@ app.get('/api/info', (req, res) => {
   const args = [
     '--dump-json',
     '--no-playlist',
-    '--quiet',
-    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    '--no-check-certificates',
+    '--user-agent', 'com.google.android.youtube/19.29.37 (Linux; U; Android 11) gzip',
     '--add-header', 'Accept-Language:en-US,en;q=0.9',
-    '--extractor-args', 'youtube:player_client=ios,web',
+    '--extractor-args', 'youtube:player_client=android_music,ios',
+    '--socket-timeout', '30',
     url
   ];
 
@@ -50,8 +51,12 @@ app.get('/api/info', (req, res) => {
 
   proc.on('close', (code) => {
     if (code !== 0) {
-      console.error('yt-dlp error:', errOutput);
-      return res.status(500).json({ error: 'Could not fetch video info. Check the URL and try again.' });
+      console.error('[yt-dlp /api/info error]', errOutput);
+      // Try to give a more helpful error
+      const msg = errOutput.includes('Sign in') || errOutput.includes('bot')
+        ? 'YouTube is blocking this server. Try again in a moment.'
+        : 'Could not fetch video info. Check the URL and try again.';
+      return res.status(500).json({ error: msg });
     }
     try {
       const info = JSON.parse(output);
@@ -89,9 +94,11 @@ app.post('/api/download', (req, res) => {
     res.setHeader('X-Filename', filename);
 
     const bypass = [
-      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      '--no-check-certificates',
+      '--user-agent', 'com.google.android.youtube/19.29.37 (Linux; U; Android 11) gzip',
       '--add-header', 'Accept-Language:en-US,en;q=0.9',
-      '--extractor-args', 'youtube:player_client=ios,web'
+      '--extractor-args', 'youtube:player_client=android_music,ios',
+      '--socket-timeout', '30'
     ];
     let args;
     if (format === 'mp3') {
@@ -154,10 +161,12 @@ app.get('/api/progress', (req, res) => {
     '--no-playlist', '-x',
     '--audio-format', format,
     '--audio-quality', format === 'mp3' ? `${quality}K` : '0',
-    '--newline', '--progress',
-    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    '--no-check-certificates',
+    '--user-agent', 'com.google.android.youtube/19.29.37 (Linux; U; Android 11) gzip',
     '--add-header', 'Accept-Language:en-US,en;q=0.9',
-    '--extractor-args', 'youtube:player_client=ios,web',
+    '--extractor-args', 'youtube:player_client=android_music,ios',
+    '--socket-timeout', '30',
+    '--newline', '--progress',
     '-o', path.join(DOWNLOAD_DIR, '%(title)s.%(ext)s'),
     url
   ];
