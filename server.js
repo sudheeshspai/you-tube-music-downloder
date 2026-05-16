@@ -18,9 +18,9 @@ if (!fs.existsSync(DOWNLOAD_DIR)) {
   fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
 }
 
-// Helper: sanitize URL
+// Helper: validate YouTube URL (accepts all sharing formats including ?si= params)
 function isValidYouTubeUrl(url) {
-  const pattern = /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/|playlist\?list=)|youtu\.be\/)[\w\-]+/;
+  const pattern = /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=[\w\-]+|shorts\/[\w\-]+|playlist\?list=[\w\-]+)|youtu\.be\/[\w\-]+)(\?[^\s]*)?$/i;
   return pattern.test(url);
 }
 
@@ -37,7 +37,7 @@ app.get('/api/info', (req, res) => {
     '--quiet',
     '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     '--add-header', 'Accept-Language:en-US,en;q=0.9',
-    '--extractor-args', 'youtube:player_client=web',
+    '--extractor-args', 'youtube:player_client=ios,web',
     url
   ];
 
@@ -91,7 +91,7 @@ app.post('/api/download', (req, res) => {
     const bypass = [
       '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       '--add-header', 'Accept-Language:en-US,en;q=0.9',
-      '--extractor-args', 'youtube:player_client=web'
+      '--extractor-args', 'youtube:player_client=ios,web'
     ];
     let args;
     if (format === 'mp3') {
@@ -157,7 +157,7 @@ app.get('/api/progress', (req, res) => {
     '--newline', '--progress',
     '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     '--add-header', 'Accept-Language:en-US,en;q=0.9',
-    '--extractor-args', 'youtube:player_client=web',
+    '--extractor-args', 'youtube:player_client=ios,web',
     '-o', path.join(DOWNLOAD_DIR, '%(title)s.%(ext)s'),
     url
   ];
